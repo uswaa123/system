@@ -271,55 +271,146 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const userRepository = require('../repositories/user.repository');
 const { sendResetPasswordEmail } = require('../services/email.service');
+const { 
+    isValidEmail, 
+    validatePassword, 
+    validateName, 
+    sanitizeInput,
+    checkLoginAttempts,
+    recordLoginAttempt 
+} = require('../utils/validation');
 require('dotenv').config();
 const generateToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '1h' });
 const generateResetToken = (email) => jwt.sign({ email, type: 'reset' }, process.env.JWT_SECRET, { expiresIn: '1h' });
 /* SIGN UP */
 const signUp = async (req, res) => {
-    const { name, email, password, confirmPassword } = req.body;
+    let { name, email, password, confirmPassword } = req.body;
+    
+    // Sanitize inputs
+    name = sanitizeInput(name);
+    email = sanitizeInput(email);
+    
+    // Check required fields
     if (!name || !email || !password || !confirmPassword) {
         return res.status(400).json({ success: false, message: 'All fields are required.' });
     }
+    
+    // Validate name (only alphabets)
+    const nameValidation = validateName(name);
+    if (!nameValidation.isValid) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Name validation failed', 
+            errors: nameValidation.errors 
+        });
+    }
+    
+    // Validate email format
+    if (!isValidEmail(email)) {
+        return res.status(400).json({ success: false, message: 'Please provide a valid email address.' });
+    }
+    
+    // Validate password strength
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.isValid) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Password validation failed', 
+            errors: passwordValidation.errors 
+        });
+    }
+    
+    // Check password confirmation
     if (password !== confirmPassword) {
         return res.status(400).json({ success: false, message: 'Passwords do not match.' });
     }
+    
     try {
-        const existingUser = await userRepository.findUserByEmail(email);
+        // Check if user already exists
+        const existingUser = await userRepository.findUserByEmail(email.toLowerCase());
         if (existingUser) {
-            return res.status(400).json({ success: false, message: 'User already exists' });
+            return res.status(400).json({ success: false, message: 'User already exists with this email address.' });
         }
-        const hashedPassword = await bcrypt.hash(password, 10);
-        const newUserId = await userRepository.createUser(name, email, hashedPassword);
+        
+        // Hash password and create user
+        const hashedPassword = await bcrypt.hash(password, 12);
+        const newUserId = await userRepository.createUser(name.trim(), email.toLowerCase(), hashedPassword);
+        
+        if (!newUserId) {
+            return res.status(500).json({ success: false, message: 'Failed to create user account.' });
+        }
+        
         res.status(201).json({
             success: true,
             message: 'User created successfully',
-            data: { id: newUserId, name, email, token: generateToken(newUserId) }
+            data: { id: newUserId, name: name.trim(), email: email.toLowerCase(), token: generateToken(newUserId) }
         });
     } catch (error) {
         console.error(':x: SignUp Error:', error);
-        res.status(500).json({ success: false, message: 'Server error', error: error.message });
+        res.status(500).json({ success: false, message: 'Server error occurred during registration.' });
     }
 };
 /* LOGIN */
 const login = async (req, res) => {
-    const { email, password } = req.body;
+    let { email, password } = req.body;
+    
+    // Sanitize inputs
+    email = sanitizeInput(email);
+    
+    // Check required fields
     if (!email || !password) {
-        return res.status(400).json({ success: false, message: 'All fields are required.' });
+        return res.status(400).json({ success: false, message: 'Email and password are required.' });
     }
+    
+    // Validate email format
+    if (!isValidEmail(email)) {
+        return res.status(400).json({ success: false, message: 'Please provide a valid email address.' });
+    }
+    
+    // Check login attempts
+    const loginCheck = checkLoginAttempts(email.toLowerCase());
+    if (loginCheck.isBlocked) {
+        return res.status(429).json({ 
+            success: false, 
+            message: `Too many login attempts. Please try again after ${loginCheck.resetTime.toLocaleTimeString()}.`,
+            resetTime: loginCheck.resetTime
+        });
+    }
+    
     try {
-        const user = await userRepository.findUserByEmail(email);
+        const user = await userRepository.findUserByEmail(email.toLowerCase());
+        
         if (user && await bcrypt.compare(password, user.password)) {
+            // Successful login
+            recordLoginAttempt(email.toLowerCase(), true);
+            
             res.status(200).json({
                 success: true,
                 message: 'Login successful',
-                data: { id: user.id, email: user.email, token: generateToken(user.id) }
+                data: { 
+                    id: user.id, 
+                    name: user.name,
+                    email: user.email, 
+                    token: generateToken(user.id) 
+                }
             });
         } else {
-            res.status(400).json({ success: false, message: 'Invalid credentials' });
+            // Failed login
+            recordLoginAttempt(email.toLowerCase(), false);
+            
+            const updatedCheck = checkLoginAttempts(email.toLowerCase());
+            const remainingAttempts = updatedCheck.remainingAttempts;
+            
+            let message = 'Invalid email or password.';
+            if (remainingAttempts <= 2 && remainingAttempts > 0) {
+                message += ` ${remainingAttempts} attempt(s) remaining.`;
+            }
+            
+            res.status(401).json({ success: false, message });
         }
     } catch (error) {
         console.error(':x: Login Error:', error);
-        res.status(500).json({ success: false, message: 'Server error', error: error.message });
+        res.status(500).json({ success: false, message: 'Server error occurred during login.' });
     }
 };
 /* LOGOUT */
@@ -328,56 +419,121 @@ const logout = (req, res) => {
 };
 /* FORGOT PASSWORD */
 const forgotPassword = async (req, res) => {
-    const { email } = req.body;
+    let { email } = req.body;
+    
+    // Sanitize input
+    email = sanitizeInput(email);
+    
     if (!email) {
         return res.status(400).json({ success: false, message: 'Email address is required' });
     }
+    
+    // Validate email format
+    if (!isValidEmail(email)) {
+        return res.status(400).json({ success: false, message: 'Please provide a valid email address.' });
+    }
+    
     try {
-        const user = await userRepository.findUserByEmail(email);
+        const user = await userRepository.findUserByEmail(email.toLowerCase());
+        
+        // Always return success to prevent email enumeration attacks
         if (!user) {
-            return res.status(404).json({ success: false, message: 'User not found' });
+            return res.status(200).json({ 
+                success: true, 
+                message: 'If an account with that email exists, a password reset link has been sent.' 
+            });
         }
-        const resetToken = generateResetToken(email);
-        await sendResetPasswordEmail(email, resetToken);
-        res.status(200).json({ success: true, message: 'Password reset email sent successfully' });
+        
+        const resetToken = generateResetToken(email.toLowerCase());
+        await sendResetPasswordEmail(email.toLowerCase(), resetToken);
+        
+        res.status(200).json({ 
+            success: true, 
+            message: 'Password reset email sent successfully' 
+        });
     } catch (error) {
         console.error(':x: Forgot Password Error:', error);
+        
         if (error.code?.startsWith('ER_')) {
-            return res.status(500).json({ success: false, message: `Database error: ${error.sqlMessage}` });
+            return res.status(500).json({ success: false, message: 'Database error occurred.' });
         }
+        
         if (error.message.includes('authentication')) {
-            return res.status(500).json({ success: false, message: 'Email authentication failed' });
+            return res.status(500).json({ success: false, message: 'Email service temporarily unavailable.' });
         }
-        res.status(500).json({ success: false, message: 'Failed to send reset email', error: error.message });
+        
+        res.status(500).json({ success: false, message: 'Failed to process password reset request.' });
     }
 };
 /* RESET PASSWORD */
 const resetPassword = async (req, res) => {
     const { token, newPassword, confirmPassword } = req.body;
+    
+    // Check required fields
     if (!token || !newPassword || !confirmPassword) {
-        return res.status(400).json({ success: false, message: 'Token, new password, and confirm password are required' });
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Token, new password, and confirm password are required' 
+        });
     }
+    
+    // Validate password strength
+    const passwordValidation = validatePassword(newPassword);
+    if (!passwordValidation.isValid) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Password validation failed', 
+            errors: passwordValidation.errors 
+        });
+    }
+    
+    // Check password confirmation
     if (newPassword !== confirmPassword) {
         return res.status(400).json({ success: false, message: 'Passwords do not match' });
     }
+    
     try {
+        // Verify and decode token
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        
         if (decoded.type !== 'reset') {
-            return res.status(400).json({ success: false, message: 'Invalid reset token' });
+            return res.status(400).json({ success: false, message: 'Invalid reset token type' });
         }
+        
+        // Find user
         const user = await userRepository.findUserByEmail(decoded.email);
         if (!user) {
-            return res.status(404).json({ success: false, message: 'User not found' });
+            return res.status(404).json({ success: false, message: 'User account not found' });
         }
-        const hashedPassword = await bcrypt.hash(newPassword, 10);
-        await userRepository.updateUserPassword(user.id, hashedPassword);
+        
+        // Hash new password and update
+        const hashedPassword = await bcrypt.hash(newPassword, 12);
+        const updateResult = await userRepository.updateUserPassword(user.id, hashedPassword);
+        
+        if (!updateResult) {
+            return res.status(500).json({ success: false, message: 'Failed to update password' });
+        }
+        
         res.status(200).json({ success: true, message: 'Password reset successfully' });
+        
     } catch (error) {
         console.error(':x: Reset Password Error:', error);
+        
         if (error.name === 'TokenExpiredError') {
-            return res.status(400).json({ success: false, message: 'Reset token expired' });
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Reset token has expired. Please request a new password reset.' 
+            });
         }
-        res.status(500).json({ success: false, message: 'Server error', error: error.message });
+        
+        if (error.name === 'JsonWebTokenError') {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Invalid reset token. Please request a new password reset.' 
+            });
+        }
+        
+        res.status(500).json({ success: false, message: 'Server error occurred during password reset.' });
     }
 };
 module.exports = { signUp, login, logout, forgotPassword, resetPassword };
