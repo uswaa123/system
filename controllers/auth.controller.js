@@ -270,12 +270,15 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const userRepository = require('../repositories/user.repository');
-const { sendResetPasswordEmail } = require('../services/email.service');
+const { sendVerificationOTP, sendResetPasswordEmail } = require('../services/email.service');
 const { 
     isValidEmail, 
     validatePassword, 
     validateName, 
     sanitizeInput,
+    generateOTP,
+    storeOTP,
+    verifyOTP,
     checkLoginAttempts,
     recordLoginAttempt 
 } = require('../utils/validation');
@@ -332,18 +335,30 @@ const signUp = async (req, res) => {
             return res.status(400).json({ success: false, message: 'User already exists with this email address.' });
         }
         
-        // Hash password and create user
+        // Hash password and create unverified user
         const hashedPassword = await bcrypt.hash(password, 12);
-        const newUserId = await userRepository.createUser(name.trim(), email.toLowerCase(), hashedPassword);
+        const newUserId = await userRepository.createUser(name.trim(), email.toLowerCase(), hashedPassword, false);
         
         if (!newUserId) {
             return res.status(500).json({ success: false, message: 'Failed to create user account.' });
         }
         
+        // Generate and send OTP for email verification
+        const otp = generateOTP();
+        storeOTP(email.toLowerCase(), otp);
+        
+        await sendVerificationOTP(email.toLowerCase(), otp);
+        
         res.status(201).json({
             success: true,
-            message: 'User created successfully',
-            data: { id: newUserId, name: name.trim(), email: email.toLowerCase(), token: generateToken(newUserId) }
+            message: 'Account created successfully! Please check your email for verification code.',
+            data: { 
+                id: newUserId, 
+                name: name.trim(), 
+                email: email.toLowerCase(),
+                emailVerified: false,
+                message: 'Please verify your email before logging in'
+            }
         });
     } catch (error) {
         console.error(':x: SignUp Error:', error);
@@ -381,6 +396,16 @@ const login = async (req, res) => {
         const user = await userRepository.findUserByEmail(email.toLowerCase());
         
         if (user && await bcrypt.compare(password, user.password)) {
+            // Check if email is verified
+            if (!user.email_verified) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Please verify your email address before logging in.',
+                    requiresVerification: true,
+                    email: user.email
+                });
+            }
+            
             // Successful login
             recordLoginAttempt(email.toLowerCase(), true);
             
@@ -391,6 +416,7 @@ const login = async (req, res) => {
                     id: user.id, 
                     name: user.name,
                     email: user.email, 
+                    emailVerified: user.email_verified,
                     token: generateToken(user.id) 
                 }
             });
@@ -536,7 +562,156 @@ const resetPassword = async (req, res) => {
         res.status(500).json({ success: false, message: 'Server error occurred during password reset.' });
     }
 };
-module.exports = { signUp, login, logout, forgotPassword, resetPassword };
+
+/* VERIFY EMAIL */
+const verifyEmail = async (req, res) => {
+    let { email, otp } = req.body;
+    
+    // Sanitize inputs
+    email = sanitizeInput(email);
+    otp = sanitizeInput(otp);
+    
+    if (!email || !otp) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Email and OTP are required' 
+        });
+    }
+    
+    // Validate email format
+    if (!isValidEmail(email)) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Please provide a valid email address.' 
+        });
+    }
+    
+    try {
+        // Verify OTP
+        const otpResult = verifyOTP(email.toLowerCase(), otp);
+        
+        if (!otpResult.isValid) {
+            return res.status(400).json({ 
+                success: false, 
+                message: otpResult.message 
+            });
+        }
+        
+        // Check if user exists
+        const user = await userRepository.findUserByEmail(email.toLowerCase());
+        if (!user) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'User not found' 
+            });
+        }
+        
+        // Check if already verified
+        if (user.email_verified) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Email is already verified' 
+            });
+        }
+        
+        // Verify the email in database
+        const verificationResult = await userRepository.verifyUserEmail(email.toLowerCase());
+        
+        if (!verificationResult) {
+            return res.status(500).json({ 
+                success: false, 
+                message: 'Failed to verify email' 
+            });
+        }
+        
+        res.status(200).json({
+            success: true,
+            message: 'Email verified successfully! You can now log in.',
+            data: {
+                email: email.toLowerCase(),
+                verified: true
+            }
+        });
+        
+    } catch (error) {
+        console.error(':x: Verify Email Error:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Server error occurred during email verification.' 
+        });
+    }
+};
+
+/* RESEND OTP */
+const resendOTP = async (req, res) => {
+    let { email } = req.body;
+    
+    // Sanitize input
+    email = sanitizeInput(email);
+    
+    if (!email) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Email address is required' 
+        });
+    }
+    
+    // Validate email format
+    if (!isValidEmail(email)) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Please provide a valid email address.' 
+        });
+    }
+    
+    try {
+        // Check if user exists
+        const user = await userRepository.findUserByEmail(email.toLowerCase());
+        if (!user) {
+            // Don't reveal if user exists or not (security)
+            return res.status(200).json({ 
+                success: true, 
+                message: 'If an account with that email exists, a new OTP has been sent.' 
+            });
+        }
+        
+        // Check if already verified
+        if (user.email_verified) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Email is already verified' 
+            });
+        }
+        
+        // Generate and send new OTP
+        const otp = generateOTP();
+        storeOTP(email.toLowerCase(), otp);
+        
+        await sendVerificationOTP(email.toLowerCase(), otp);
+        
+        res.status(200).json({
+            success: true,
+            message: 'New verification code sent to your email!'
+        });
+        
+    } catch (error) {
+        console.error(':x: Resend OTP Error:', error);
+        
+        if (error.message.includes('authentication')) {
+            return res.status(500).json({ 
+                success: false, 
+                message: 'Email service temporarily unavailable.' 
+            });
+        }
+        
+        res.status(500).json({ 
+            success: false, 
+            message: 'Failed to send verification code.' 
+        });
+    }
+};
+
+module.exports = { signUp, login, logout, forgotPassword, resetPassword, verifyEmail, resendOTP };
 
 
 

@@ -10,6 +10,56 @@ const transporter = nodemailer.createTransport({
     }
 });
 
+// Send email verification OTP
+const sendVerificationOTP = async (to, otp) => {
+    const mailOptions = {
+        from: process.env.EMAIL_USER,
+        to: to,
+        subject: 'Email Verification - OTP Code',
+        html: `
+            <div style="max-width: 600px; margin: 0 auto; padding: 20px; font-family: Arial, sans-serif;">
+                <h2 style="color: #333; text-align: center;">Email Verification</h2>
+                
+                <p>Hello,</p>
+                
+                <p>Thank you for signing up! To complete your registration, please use the verification code below:</p>
+                
+                <div style="text-align: center; margin: 30px 0;">
+                    <div style="background-color: #f8f9fa; border: 2px dashed #007bff; padding: 20px; border-radius: 10px; display: inline-block;">
+                        <h1 style="color: #007bff; margin: 0; font-size: 32px; letter-spacing: 5px;">${otp}</h1>
+                    </div>
+                </div>
+                
+                <p style="text-align: center; color: #666; font-size: 16px;">
+                    Enter this code in your verification form to activate your account.
+                </p>
+                
+                <p style="color: #666; font-size: 14px; margin-top: 30px;">
+                    This code will expire in 10 minutes for security reasons.
+                </p>
+                
+                <p style="color: #666; font-size: 14px;">
+                    If you didn't request this verification, please ignore this email.
+                </p>
+                
+                <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
+                <p style="color: #999; font-size: 12px; text-align: center;">
+                    This is an automated email. Please do not reply.
+                </p>
+            </div>
+        `
+    };
+
+    try {
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Verification OTP email sent:', info.response);
+        return { success: true, messageId: info.messageId };
+    } catch (error) {
+        console.error('Error sending verification OTP email:', error);
+        throw new Error('Failed to send verification email');
+    }
+};
+
 // Send reset password email
 const sendResetPasswordEmail = async (to, resetToken) => {
     const resetUrl = `${process.env.FRONTEND_URL}/newpassword.html?token=${resetToken}`;
@@ -59,5 +109,6 @@ const sendResetPasswordEmail = async (to, resetToken) => {
 };
 
 module.exports = {
+    sendVerificationOTP,
     sendResetPasswordEmail
 };

@@ -97,10 +97,10 @@ const findUserById = async (id) => {
     );
     return rows.length > 0 ? rows[0] : null;
 };
-const createUser = async (name, email, hashedPassword) => {
+const createUser = async (name, email, hashedPassword, isVerified = false) => {
     const [result] = await db.execute(
-        'INSERT INTO users (name, email, password) VALUES (?, ?, ?)',
-        [name, email, hashedPassword]
+        'INSERT INTO users (name, email, password, email_verified, created_at) VALUES (?, ?, ?, ?, NOW())',
+        [name, email, hashedPassword, isVerified]
     );
     return result.insertId;
 };
@@ -111,7 +111,16 @@ const updateUserPassword = async (userId, hashedPassword) => {
     );
     return result.affectedRows > 0;
 };
-module.exports = { findUserByEmail, findUserById, createUser, updateUserPassword };
+
+const verifyUserEmail = async (email) => {
+    const [result] = await db.execute(
+        'UPDATE users SET email_verified = true, verified_at = NOW() WHERE email = ?',
+        [email]
+    );
+    return result.affectedRows > 0;
+};
+
+module.exports = { findUserByEmail, findUserById, createUser, updateUserPassword, verifyUserEmail };
 
 
 

@@ -19,7 +19,9 @@ const {
     login,
     logout,
     forgotPassword,
-    resetPassword
+    resetPassword,
+    verifyEmail,
+    resendOTP
 } = require('../controllers/auth.controller');
 // Routes
 router.post('/signUp', signUp);
@@ -27,4 +29,6 @@ router.post('/login', login);
 router.post('/logout', logout);
 router.post('/forgotPassword', forgotPassword);
 router.post('/resetPassword', resetPassword);
+router.post('/verifyEmail', verifyEmail);
+router.post('/resendOTP', resendOTP);
 module.exports = router;

@@ -81,6 +81,40 @@ const sanitizeInput = (input) => {
         .substring(0, 1000); // Limit length
 };
 
+// Generate OTP
+const generateOTP = () => {
+    return Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit OTP
+};
+
+// OTP storage (in production, use Redis or database)
+const otpStore = new Map();
+
+const storeOTP = (email, otp) => {
+    const expiryTime = Date.now() + 10 * 60 * 1000; // 10 minutes
+    otpStore.set(email.toLowerCase(), { otp, expiry: expiryTime });
+};
+
+const verifyOTP = (email, otp) => {
+    const stored = otpStore.get(email.toLowerCase());
+    
+    if (!stored) {
+        return { isValid: false, message: 'No OTP found for this email' };
+    }
+    
+    if (Date.now() > stored.expiry) {
+        otpStore.delete(email.toLowerCase());
+        return { isValid: false, message: 'OTP has expired' };
+    }
+    
+    if (stored.otp !== otp) {
+        return { isValid: false, message: 'Invalid OTP' };
+    }
+    
+    // OTP is valid, remove it
+    otpStore.delete(email.toLowerCase());
+    return { isValid: true, message: 'OTP verified successfully' };
+};
+
 // Rate limiting helper (simple in-memory store)
 const loginAttempts = new Map();
 
@@ -120,6 +154,9 @@ module.exports = {
     validatePassword,
     validateName,
     sanitizeInput,
+    generateOTP,
+    storeOTP,
+    verifyOTP,
     checkLoginAttempts,
     recordLoginAttempt
 };
