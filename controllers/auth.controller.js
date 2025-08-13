@@ -167,6 +167,16 @@ const forgotPassword = async (req, res) => {
 
     } catch (error) {
         console.error('Forgot password error:', error);
+        
+        // Check if it's an email service error
+        if (error.message.includes('Invalid login') || error.message.includes('authentication')) {
+            return res.status(500).json({ 
+                success: false, 
+                message: 'Email service configuration error. Please check email credentials.', 
+                data: { error: 'Email authentication failed' } 
+            });
+        }
+        
         res.status(500).json({ 
             success: false, 
             message: 'Failed to send reset email', 
