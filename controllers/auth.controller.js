@@ -1,10 +1,15 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const userRepository = require('../repositories/user.repository');
+const { sendResetPasswordEmail } = require('../services/email.service');
 require('dotenv').config();
 
 const generateToken = (id) => {
     return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+};
+
+const generateResetToken = (email) => {
+    return jwt.sign({ email, type: 'reset' }, process.env.JWT_SECRET, { expiresIn: '1h' });
 };
 
 // @desc    Register a new user
@@ -124,7 +129,7 @@ const logout = (req, res) => {
     });
 };
 
-// @desc    Simulated Forgot Password (placeholder)
+// @desc    Send password reset email
 // @route   POST /api/auth/forgotPassword
 // @access  Public
 const forgotPassword = async (req, res) => {
@@ -148,20 +153,103 @@ const forgotPassword = async (req, res) => {
             });
         }
 
-        console.log(`Password reset link requested for: ${email}`);
+        // Generate reset token
+        const resetToken = generateResetToken(email);
+
+        // Send reset email
+        await sendResetPasswordEmail(email, resetToken);
+
         res.status(200).json({ 
             success: true, 
-            message: 'If a user with that email exists, a password reset link has been sent.', 
+            message: 'Password reset email sent successfully', 
             data: null 
         });
 
     } catch (error) {
+        console.error('Forgot password error:', error);
         res.status(500).json({ 
             success: false, 
-            message: 'Server error', 
+            message: 'Failed to send reset email', 
             data: { error: error.message } 
         });
     }
 };
 
-module.exports = { signUp, login, logout, forgotPassword };
+// @desc    Reset password with token
+// @route   POST /api/auth/resetPassword
+// @access  Public
+const resetPassword = async (req, res) => {
+    const { token, newPassword, confirmPassword } = req.body;
+
+    if (!token || !newPassword || !confirmPassword) {
+        return res.status(400).json({
+            success: false,
+            message: 'Token, new password, and confirm password are required',
+            data: null
+        });
+    }
+
+    if (newPassword !== confirmPassword) {
+        return res.status(400).json({
+            success: false,
+            message: 'Passwords do not match',
+            data: null
+        });
+    }
+
+    try {
+        // Verify token
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        
+        if (decoded.type !== 'reset') {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid reset token',
+                data: null
+            });
+        }
+
+        const email = decoded.email;
+
+        // Check if user exists
+        const user = await userRepository.findUserByEmail(email);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found',
+                data: null
+            });
+        }
+
+        // Hash new password
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+        // Update password in database
+        await userRepository.updateUserPassword(user.id, hashedPassword);
+
+        res.status(200).json({
+            success: true,
+            message: 'Password reset successfully',
+            data: null
+        });
+
+    } catch (error) {
+        if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid or expired reset token',
+                data: null
+            });
+        }
+
+        console.error('Reset password error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error',
+            data: { error: error.message }
+        });
+    }
+};
+
+module.exports = { signUp, login, logout, forgotPassword, resetPassword };

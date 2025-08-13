@@ -18,4 +18,12 @@ const createUser = async (name, email, hashedPassword) => {
     return result.insertId;
 };
 
-module.exports = { findUserByEmail, findUserById, createUser };
+const updateUserPassword = async (userId, hashedPassword) => {
+    const [result] = await db.execute(
+        'UPDATE users SET password = ? WHERE id = ?',
+        [hashedPassword, userId]
+    );
+    return result.affectedRows > 0;
+};
+
+module.exports = { findUserByEmail, findUserById, createUser, updateUserPassword };
