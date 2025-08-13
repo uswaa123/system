@@ -8,8 +8,8 @@ const port = process.env.PORT || 21859;
 // Middleware to parse JSON and enable CORS
 app.use(express.json());
 app.use(cors({
-    origin: ['https://auth-backend3.railway.app', 'http://localhost:3000', 'http://localhost:5173'],
-    credentials: true,
+    origin: '*',
+    credentials: false,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
