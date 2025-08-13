@@ -3,7 +3,7 @@ const cors = require('cors');
 require('dotenv').config();
 
 const app = express();
-const port = process.env.DB_PORT || 21859;
+const port = process.env.PORT || 21859;
 
 // Middleware to parse JSON and enable CORS
 app.use(express.json());

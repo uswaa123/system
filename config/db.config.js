@@ -13,8 +13,8 @@ const pool = mysql.createPool({
     queueLimit: 0,
     
     ssl:{
-        ca: fs.readFileSync('C:\\Users\\HP\\Downloads\\ca.pem')
-        
+        ca: fs.readFileSync('C:\\Users\\HP\\Downloads\\ca.pem'),
+        rejectUnauthorized: false
     }
 
 
