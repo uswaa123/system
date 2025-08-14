@@ -98,8 +98,9 @@ const findUserById = async (id) => {
     return rows.length > 0 ? rows[0] : null;
 };
 const createUser = async (name, email, hashedPassword, isVerified = false) => {
+    console.log('✅ CURRENT createUser function called - no created_at column');
     const [result] = await db.execute(
-        'INSERT INTO users (name, email, password, email_verified, created_at) VALUES (?, ?, ?, ?, NOW())',
+        'INSERT INTO users (name, email, password, email_verified) VALUES (?, ?, ?, ?)',
         [name, email, hashedPassword, isVerified]
     );
     return result.insertId;

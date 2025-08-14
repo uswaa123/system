@@ -14,6 +14,15 @@
 
 const express = require('express');
 const router = express.Router();
+let authController;
+try {
+    authController = require('../controllers/auth.controller');
+    console.log('Auth controller loaded successfully');
+} catch (error) {
+    console.error('Error loading auth controller:', error.message);
+    console.error('Stack:', error.stack);
+}
+
 const {
     signUp,
     login,
@@ -22,7 +31,12 @@ const {
     resetPassword,
     verifyEmail,
     resendOTP
-} = require('../controllers/auth.controller');
+} = authController || {};
+// Test endpoint
+router.get('/test', (req, res) => {
+    res.json({ success: true, message: 'Auth routes working' });
+});
+
 // Routes
 router.post('/signUp', signUp);
 router.post('/login', login);

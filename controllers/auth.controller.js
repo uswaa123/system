@@ -287,6 +287,7 @@ const generateToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET, { expires
 const generateResetToken = (email) => jwt.sign({ email, type: 'reset' }, process.env.JWT_SECRET, { expiresIn: '1h' });
 /* SIGN UP */
 const signUp = async (req, res) => {
+    console.log('SignUp endpoint called for email:', req.body.email);
     let { name, email, password, confirmPassword } = req.body;
     
     // Sanitize inputs
@@ -347,7 +348,12 @@ const signUp = async (req, res) => {
         const otp = generateOTP();
         storeOTP(email.toLowerCase(), otp);
         
-        await sendVerificationOTP(email.toLowerCase(), otp);
+        try {
+            await sendVerificationOTP(email.toLowerCase(), otp);
+        } catch (emailError) {
+            console.error('Email sending failed:', emailError.message);
+            // Continue without failing registration - user can request OTP resend
+        }
         
         res.status(201).json({
             success: true,
@@ -361,8 +367,9 @@ const signUp = async (req, res) => {
             }
         });
     } catch (error) {
-        console.error(':x: SignUp Error:', error);
-        res.status(500).json({ success: false, message: 'Server error occurred during registration.' });
+        console.error(':x: SignUp Error:', error.message);
+        console.error('Stack:', error.stack);
+        res.status(500).json({ success: false, message: 'Server error occurred during registration.', error: error.message });
     }
 };
 /* LOGIN */

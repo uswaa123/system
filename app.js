@@ -45,7 +45,7 @@
 // // app.listen(3000, "0.0.0.0", () => console.log("Server running on all network interfaces"));
 
 
-const express = require('express');
+const express = require ('express');
 const cors = require('cors');
 require('dotenv').config();
 const app = express();
@@ -58,16 +58,25 @@ app.use(cors({
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
-// Logging middleware
+// Logging middleware  
 app.use((req, res, next) => {
-    console.log(`:envelope_with_arrow: ${req.method} ${req.path}`, req.body);
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+    // Don't log request body as it may contain sensitive data (passwords, tokens, etc.)
     next();
 });
 // Connect DB
 require('./config/db.config');
 // Routes
-const authRoutes = require('./routes/auth.routes');
-app.use('/api/auth', authRoutes);
+try {
+    const authRoutes = require('./routes/auth.routes');
+    console.log('Route object type:', typeof authRoutes);
+    console.log('Route object keys:', Object.keys(authRoutes));
+    app.use('/api/auth', authRoutes);
+    console.log('✅ Routes loaded successfully');
+} catch (error) {
+    console.error('❌ Error loading routes:', error.message);
+    console.error('Stack:', error.stack);
+}
 // Test route
 app.get('/', (req, res) => {
     res.send(':white_check_mark: API is running...');
