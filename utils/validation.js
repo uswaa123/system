@@ -94,6 +94,12 @@ const storeOTP = (email, otp) => {
     otpStore.set(email.toLowerCase(), { otp, expiry: expiryTime });
 };
 
+// For testing: create expired OTP
+const storeExpiredOTP = (email, otp) => {
+    const expiryTime = Date.now() - 1000; // 1 second ago (expired)
+    otpStore.set(email.toLowerCase(), { otp, expiry: expiryTime });
+};
+
 const verifyOTP = (email, otp) => {
     const stored = otpStore.get(email.toLowerCase());
     
@@ -156,6 +162,7 @@ module.exports = {
     sanitizeInput,
     generateOTP,
     storeOTP,
+    storeExpiredOTP,
     verifyOTP,
     checkLoginAttempts,
     recordLoginAttempt

@@ -278,6 +278,7 @@ const {
     sanitizeInput,
     generateOTP,
     storeOTP,
+    storeExpiredOTP,
     verifyOTP,
     checkLoginAttempts,
     recordLoginAttempt 
@@ -347,6 +348,9 @@ const signUp = async (req, res) => {
         // Generate and send OTP for email verification
         const otp = generateOTP();
         storeOTP(email.toLowerCase(), otp);
+        
+        // DEBUG: Log OTP for testing (remove in production)
+        console.log(`🔑 DEBUG: OTP for ${email.toLowerCase()}: ${otp}`);
         
         try {
             await sendVerificationOTP(email.toLowerCase(), otp);
@@ -694,6 +698,9 @@ const resendOTP = async (req, res) => {
         const otp = generateOTP();
         storeOTP(email.toLowerCase(), otp);
         
+        // DEBUG: Log OTP for testing (remove in production)
+        console.log(`🔑 DEBUG RESEND: OTP for ${email.toLowerCase()}: ${otp}`);
+        
         await sendVerificationOTP(email.toLowerCase(), otp);
         
         res.status(200).json({
@@ -718,7 +725,25 @@ const resendOTP = async (req, res) => {
     }
 };
 
-module.exports = { signUp, login, logout, forgotPassword, resetPassword, verifyEmail, resendOTP };
+/* TEST EXPIRED OTP - FOR TESTING ONLY */
+const testExpiredOTP = async (req, res) => {
+    const { email } = req.body;
+    if (!email) {
+        return res.status(400).json({ success: false, message: 'Email required' });
+    }
+    
+    const otp = generateOTP();
+    storeExpiredOTP(email.toLowerCase(), otp);
+    console.log(`🔑 DEBUG EXPIRED OTP for ${email.toLowerCase()}: ${otp}`);
+    
+    res.status(200).json({ 
+        success: true, 
+        message: 'Expired OTP created for testing',
+        otp: otp 
+    });
+};
+
+module.exports = { signUp, login, logout, forgotPassword, resetPassword, verifyEmail, resendOTP, testExpiredOTP };
 
 
 

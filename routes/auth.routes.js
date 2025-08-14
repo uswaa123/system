@@ -30,7 +30,8 @@ const {
     forgotPassword,
     resetPassword,
     verifyEmail,
-    resendOTP
+    resendOTP,
+    testExpiredOTP
 } = authController || {};
 // Test endpoint
 router.get('/test', (req, res) => {
@@ -45,4 +46,5 @@ router.post('/forgotPassword', forgotPassword);
 router.post('/resetPassword', resetPassword);
 router.post('/verifyEmail', verifyEmail);
 router.post('/resendOTP', resendOTP);
+router.post('/testExpiredOTP', testExpiredOTP); // Testing only
 module.exports = router;
